@@ -3,4 +3,4 @@ Implement my own angular js based on the book &lt;build your own angularjs>
 
 
 ### Note
-The version of karma-jasmine should be @0.1.0
+Just use the package.json of the source code of the book on github.
