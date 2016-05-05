@@ -5,6 +5,7 @@ var _ = require('lodash');
 function Scope() {
     this.$$watchers = [];
     this.$$lastDirtyWatch = null;
+    this.$$asyncQueue = [];
 }
 
 // A function is not considered equal to anything but itself
@@ -26,6 +27,12 @@ Scope.prototype.$digest = function() {
     var dirty;
     this.$$lastDirtyWatch = null;
     do {
+        // this guarantees that the function will be invoked later 
+        // but still during the same digest
+        while (this.$$asyncQueue.length) {
+            var asyncTask = this.$$asyncQueue.shift();
+            asyncTask.scope.$eval(asyncTask.expression);
+        }
         dirty = this.$$digestOnce();
         if (dirty && !(ttl--)) {
             throw "10 digest iterations reached";
@@ -49,7 +56,7 @@ Scope.prototype.$$digestOnce = function() {
                 self);
             dirty = true;
         } else if (self.$$lastDirtyWatch === watcher) {
-            return false;
+            return false;  // optimization, stop early
         }
     });
     return dirty;
@@ -63,6 +70,27 @@ Scope.prototype.$$areEqual = function(newValue, oldValue, valueEq) {
             (typeof newValue === 'number' && typeof oldValue === 'number' &&
                 isNaN(newValue) && isNaN(oldValue));
     }
+};
+
+Scope.prototype.$eval = function(expr, locals) {
+    return expr(this, locals);
+};
+
+Scope.prototype.$apply = function(expr) {
+    try {
+        return this.$eval(expr);
+    } finally {
+        this.$digest();
+    }
+};
+
+
+// $evalAsync, on the other
+// hand, is much more strict about when the scheduled work is executed. Since it’ll happen
+// during the ongoing digest, it’s guaranteed to run before the browser decides to do anything
+// else.
+Scope.prototype.$evalAsync = function(expr) {
+    this.$$asyncQueue.push({scope: this, expression: expr});
 };
 
 module.exports = Scope;

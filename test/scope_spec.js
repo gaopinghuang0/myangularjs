@@ -217,6 +217,68 @@ describe("Scope", function() {
             expect(scope.counter).toBe(1);            
         });
 
+        it("executes $eval'ed function and returns result", function() {
+            scope.aValue = 42;
+
+            var result = scope.$eval(function(scope) {
+                return scope.aValue;
+            });
+
+            expect(result).toBe(42);
+        });
+
+        it("passes the second $eval argument straight through", function() {
+            scope.aValue = 42;
+
+            var result = scope.$eval(function(scope, arg) {
+                return scope.aValue + arg;
+            }, 2);
+
+            expect(result).toBe(44);
+        });
+
+        it("executes $apply'ed function and starts the digest", function() {
+            scope.aValue = 'someValue';
+            scope.counter = 0;
+
+            scope.$watch(
+                function(scope) {
+                    return scope.aValue;
+                },
+                function(newValue, oldValue, scope) {
+                    scope.counter++;
+                }
+            );
+
+            scope.$digest();
+            expect(scope.counter).toBe(1);
+
+            scope.$apply(function(scope) {
+                scope.aValue = 'OtherValue';
+            });
+            expect(scope.counter).toBe(2);
+        });
+
+        it("executes $evalAsync'ed function later in the same cycle", function() {
+            scope.aValue = [1, 3, 2];
+            scope.asyncEvaluated = false;
+            scope.asyncEvaluatedImmediately = false;
+
+            scope.$watch(
+                function(scope) {return scope.aValue;},
+                function(newValue, oldValue, scope) {
+                    scope.$evalAsync(function(scope) {
+                        scope.asyncEvaluated = true;
+                    });
+                    scope.asyncEvaluatedImmediately = scope.asyncEvaluated;
+                }
+            );
+
+            scope.$digest();
+            expect(scope.asyncEvaluated).toBe(true);
+            expect(scope.asyncEvaluatedImmediately).toBe(false);
+        });
+
     });
 
 
