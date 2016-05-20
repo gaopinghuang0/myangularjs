@@ -6,6 +6,7 @@ function Scope() {
     this.$$watchers = [];
     this.$$lastDirtyWatch = null;
     this.$$asyncQueue = [];
+    this.$$applyAsyncQueue = [];
     this.$$phase = null;
 }
 
@@ -106,7 +107,29 @@ Scope.prototype.$apply = function(expr) {
 // during the ongoing digest, it’s guaranteed to run before the browser decides to do anything
 // else.
 Scope.prototype.$evalAsync = function(expr) {
+    var self = this;
+    if (!self.$$phase && !self.$$asyncQueue.length) {
+        setTimeout(function() {
+            if (self.$$asyncQueue.length) {
+                self.$digest();
+            }
+        }, 0);
+    }
     this.$$asyncQueue.push({scope: this, expression: expr});
+};
+
+Scope.prototype.$applyAsync = function(expr) {
+    var self = this;
+    self.$$applyAsyncQueue.push(function() {
+        self.$eval(expr);
+    });
+    setTimeout(function() {
+        self.$apply(function() {
+            while (self.$$applyAsyncQueue.length) {
+                self.$$applyAsyncQueue.shift()();
+            }
+        });
+    }, 0);
 };
 
 module.exports = Scope;
