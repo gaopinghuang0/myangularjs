@@ -6,6 +6,7 @@ function Scope() {
     this.$$watchers = [];
     this.$$lastDirtyWatch = null;
     this.$$asyncQueue = [];
+    this.$$phase = null;
 }
 
 // A function is not considered equal to anything but itself
@@ -26,6 +27,7 @@ Scope.prototype.$digest = function() {
     var ttl = 10;  // time to live, to prevent unstable chain watch
     var dirty;
     this.$$lastDirtyWatch = null;
+    this.$beginPhase('$digest');
     do {
         // this guarantees that the function will be invoked later 
         // but still during the same digest
@@ -34,10 +36,11 @@ Scope.prototype.$digest = function() {
             asyncTask.scope.$eval(asyncTask.expression);
         }
         dirty = this.$$digestOnce();
-        if (dirty && !(ttl--)) {
+        if ((dirty || this.$$asyncQueue.length) && !(ttl--)) {
             throw "10 digest iterations reached";
         }
-    } while (dirty);
+    } while (dirty || this.$$asyncQueue.length);
+    this.$clearPhase();
 };
 
 
@@ -62,6 +65,17 @@ Scope.prototype.$$digestOnce = function() {
     return dirty;
 };
 
+Scope.prototype.$beginPhase = function(phase) {
+    if (this.$$phase) {
+        throw this.$$phase + ' already in progress.';
+    }
+    this.$$phase = phase;
+};
+
+Scope.prototype.$clearPhase = function() {
+    this.$$phase = null;
+};
+
 Scope.prototype.$$areEqual = function(newValue, oldValue, valueEq) {
     if (valueEq) {
         return _.isEqual(newValue, oldValue);
@@ -78,8 +92,10 @@ Scope.prototype.$eval = function(expr, locals) {
 
 Scope.prototype.$apply = function(expr) {
     try {
+        this.$beginPhase('$apply');
         return this.$eval(expr);
     } finally {
+        this.$clearPhase();
         this.$digest();
     }
 };
