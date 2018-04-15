@@ -2,22 +2,22 @@
   "name": "my-own-angularjs",
   "version": "0.1.0",
   "devDependencies": {
-    "browserify": "^13.0.0",
-    "jasmine-core": "^2.3.4",
-    "jshint": "^2.8.0",
+    "browserify": "^13.3.0",
+    "jasmine-core": "^2.99.1",
+    "jshint": "^2.9.5",
     "karma": "^0.13.15",
-    "karma-browserify": "^5.0.4",
-    "karma-jasmine": "^0.3.6",
+    "karma-browserify": "^5.2.0",
+    "karma-jasmine": "^0.3.8",
     "karma-jshint-preprocessor": "0.0.6",
-    "karma-phantomjs-launcher": "^1.0.0",
-    "phantomjs-prebuilt": "^2.1.7",
-    "sinon": "^1.17.2",
-    "watchify": "^3.7.0",
-    "uglifyjs": "^2.4.10"
+    "karma-phantomjs-launcher": "^1.0.4",
+    "phantomjs-prebuilt": "^2.1.16",
+    "sinon": "^1.17.7",
+    "uglifyjs": "^2.4.11",
+    "watchify": "^3.11.0"
   },
   "dependencies": {
     "jquery": "^3.3.1",
-    "lodash": "^4.11.1"
+    "lodash": "^4.17.5"
   },
   "scripts": {
     "lint": "jshint src test",
