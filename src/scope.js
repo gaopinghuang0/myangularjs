@@ -9,7 +9,7 @@ function Scope() {
   this.$$applyAsyncQueue = [];
   this.$$applyAsyncId = null;
   this.$$postDigestQueue = [];
-  this.$$phase = null;
+  this.$$phase = null;  // $evalAsync uses it to know whether it's in a $digest phase; if not, schedule one
 }
 
 // A function is not considered equal to anything but itself
@@ -21,16 +21,28 @@ function initWatchVal() {}
 //     Note: As a user, we will use a watch expression, not a watchFn, discussed in Chapter 5
 // listenerFn: a listener function which will be called whenever that data changes.
 // valueEq: a boolean flag to enable checking by value, not by reference
+// @return: a function that can destroy the watch itself
 Scope.prototype.$watch = function(watchFn, listenerFn, valueEq) {
+  var self = this;
   var watcher = {
     watchFn: watchFn,
     listenerFn: listenerFn || function() {},
     valueEq: !!valueEq,
     last: initWatchVal
   };
-  this.$$watchers.push(watcher);
+  // use unshift not push to add new watches to the beginning, so that destroy watch 
+  // during a $digest is valid
+  this.$$watchers.unshift(watcher);
   // disable short-circuit optimization if a new watch is added during digest
-  this.$$lastDirtyWatch = null;  
+  this.$$lastDirtyWatch = null;
+  return function() {
+    // a function that removes the watch from $$watchers
+    var index = self.$$watchers.indexOf(watcher);
+    if (index >= 0) {
+      self.$$watchers.splice(index, 1);
+      self.$$lastDirtyWatch = null;  // disable short-circuit optimization 
+    }
+  };
 };
 
 // Core function: iterates over all the watchers that have been attached on the scope, 
@@ -49,10 +61,14 @@ Scope.prototype.$digest = function() {
 
   do {
     // this guarantees that the function will be invoked later 
-    // but still during the same digest
+    // but still during the same digest, the function is often added in the listener function
     while (this.$$asyncQueue.length) {
-      var asyncTask = this.$$asyncQueue.shift();
-      asyncTask.scope.$eval(asyncTask.expression);
+      try {
+        var asyncTask = this.$$asyncQueue.shift();
+        asyncTask.scope.$eval(asyncTask.expression);
+      } catch (e) {
+        console.error(e);
+      }
     }
     dirty = this.$$digestOnce();
     if ((dirty || this.$$asyncQueue.length) && !(ttl--)) {
@@ -62,7 +78,11 @@ Scope.prototype.$digest = function() {
   this.$clearPhase();
 
   while (this.$$postDigestQueue.length) {
-    this.$$postDigestQueue.shift()();
+    try {
+      this.$$postDigestQueue.shift()();
+    } catch (e) {
+      console.error(e);
+    }
   }
 };
 
@@ -70,19 +90,25 @@ Scope.prototype.$digest = function() {
 Scope.prototype.$$digestOnce = function() {
   var self = this;
   var newValue, oldValue, dirty;
-  _.forEach(this.$$watchers, function(watcher) {
-    newValue = watcher.watchFn(self);
-    oldValue = watcher.last;
-    if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
-      self.$$lastDirtyWatch = watcher;
-      watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
-      watcher.listenerFn(newValue, 
-        // For new watches, we should provide the new value as the old value
-        (oldValue === initWatchVal ? newValue : oldValue),
-        self);
-      dirty = true;
-    } else if (self.$$lastDirtyWatch === watcher) {
-      return false;  // optimization, stop early
+  _.forEachRight(this.$$watchers, function(watcher) {
+    try {
+      if (watcher) {
+        newValue = watcher.watchFn(self);
+        oldValue = watcher.last;
+        if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
+          self.$$lastDirtyWatch = watcher;
+          watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
+          watcher.listenerFn(newValue, 
+            // For new watches, we should provide the new value as the old value
+            (oldValue === initWatchVal ? newValue : oldValue),
+            self);
+          dirty = true;
+        } else if (self.$$lastDirtyWatch === watcher) {
+          return false;  // optimization, stop early
+        }
+      }
+    } catch (e) {
+      console.error(e);
     }
   });
   return dirty;
@@ -113,6 +139,7 @@ Scope.prototype.$eval = function(expr, locals) {
   return expr(this, locals);
 };
 
+// It is considered the standard way to integrate external libraries to Angular.
 Scope.prototype.$apply = function(expr) {
   try {
     this.$beginPhase('$apply');
@@ -128,6 +155,10 @@ Scope.prototype.$apply = function(expr) {
 // before the browser decides to do anything else.
 Scope.prototype.$evalAsync = function(expr) {
   var self = this;
+
+  // $evalAsync needs to know whether it's in a $digest phase; if not, schedule one
+  // so it will be eval "very soon" and doesn't have to wait until something else
+  // to trigger a $digest indefinitely
   if (!self.$$phase && !self.$$asyncQueue.length) {
     setTimeout(function() {
       if (self.$$asyncQueue.length) {
@@ -152,7 +183,11 @@ Scope.prototype.$applyAsync = function(expr) {
 
 Scope.prototype.$$flushApplyAsync = function() {
   while (this.$$applyAsyncQueue.length) {
-    this.$$applyAsyncQueue.shift()();
+    try {
+      this.$$applyAsyncQueue.shift()();
+    } catch (e) {
+      console.error(e);
+    }
   }
   this.$$applyAsyncId = null;
 };
@@ -160,5 +195,53 @@ Scope.prototype.$$flushApplyAsync = function() {
 Scope.prototype.$$postDigest = function(fn) {
   this.$$postDigestQueue.push(fn);
 };
+
+Scope.prototype.$watchGroup = function(watchFns, listenerFn) {
+  var self = this;
+  var newValues = new Array(watchFns.length);
+  var oldValues = new Array(watchFns.length);
+  var changeReactionScheduled = false;
+  var firstRun = true;
+
+  if (watchFns.length === 0) {
+    var shouldCall = true;
+    self.$evalAsync(function() {
+      if (shouldCall) {
+        listenerFn(newValues, newValues, self);
+      }
+    });
+    return function() {
+      shouldCall = false;
+    };
+  }
+
+  function watchGroupListener() {
+    if (firstRun) {
+      firstRun = false;
+      listenerFn(newValues, newValues, self);
+    } else {
+      listenerFn(newValues, oldValues, self);
+    }
+    changeReactionScheduled = false;
+  }
+
+  var destroyFunctions = _.map(watchFns, function(watchFn, i) {
+    return self.$watch(watchFn, function(newValue, oldValue) {
+      newValues[i] = newValue;
+      oldValues[i] = oldValue;
+      if (!changeReactionScheduled) {
+        changeReactionScheduled = true;
+        self.$evalAsync(watchGroupListener);
+      }
+    });
+  });
+
+  return function() {
+    _.forEach(destroyFunctions, function(destroyFunction) {
+      destroyFunction();
+    });
+  };
+};
+
 
 module.exports = Scope;

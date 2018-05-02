@@ -17,7 +17,3 @@ $ npm test  # start Karma
 5. `Browserify` - Bring the module capabilities to client-side code (similar to CommonJS standard for Node.js). It will pre-process all our files and output a bundle that can be run in a web browser (such as the PhantomJS browser for testing).
 6. `Lo-Dash` - Array and object manipulation, such as equality checking and cloning.
 7. `jQuery` - DOM query and manipulation.
-
-
-## TODO
-Chapter 1 / Running Code After A Digest - $$postDigest
