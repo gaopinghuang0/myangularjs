@@ -1,3 +1,2 @@
 ## TODO
-Chapter 2 Scope Inheritance
-  
+Chapter 3 Watching Collections
